@@ -1,0 +1,16 @@
+
+
+
+;; opcodes for jetton
+int op::jetton_transfer() asm "0xf8a7ea5 PUSHINT";
+int op::transfer_notification() asm "0x7362d09c PUSHINT";
+
+
+;; opcodes for reward vault
+int op::deposit() asm "0x95DB9D39 PUSHINT";
+int op::claim() asm "0xA769DE27 PUSHINT";
+int op::withdraw() asm "0xB5DE5F9E PUSHINT";
+
+;; opcodes for admin
+int op::config_signer() asm "0x9C0E0150 PUSHINT";
+int op::transfer_ownership() asm "0xB516D5FF PUSHINT";
