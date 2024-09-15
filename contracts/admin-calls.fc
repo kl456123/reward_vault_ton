@@ -1,0 +1,9 @@
+() handle_admin_messages(int op, int query_id, slice in_msg_body) {
+    if (op == op::config_signer()) {
+        storage::signer = in_msg_body~load_uint(256);
+    } elseif (op == op::transfer_ownership()) {
+        storage::admin = in_msg_body~load_msg_addr();
+    } elseif (op == op::lock()) {
+    }
+    save_storage();
+}

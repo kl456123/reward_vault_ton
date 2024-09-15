@@ -1,0 +1,46 @@
+global int storage::is_locked;
+global slice storage::admin;
+global int storage::signer;
+global cell storage::jetton_wallet_code;
+
+;; to prevent from replay attack
+global cell storage::queries;
+global cell storage::old_queries;
+global int storage::last_clean_time;
+global int storage::timeout;
+
+
+() load_storage() impure inline {
+    var data_slice = get_data().begin_parse();
+
+    storage::is_locked = data_slice~load_uint(1);
+    storage::admin = data_slice~load_msg_addr();
+    ;; TODO: to support multiple signers
+    storage::signer = data_slice~load_uint(PUBLIC_KEY_SIZE);
+    storage::jetton_wallet_code = data_slice~load_ref();
+
+    storage::old_queries = data_slice~load_dict();
+    storage::queries = data_slice~load_dict();
+    storage::last_clean_time = data_slice~load_uint(TIMESTAMP_SIZE);
+    storage::timeout = data_slice~load_uint(TIMEOUT_SIZE);
+
+    data_slice.end_parse();
+
+    return ();
+}
+
+;; save_data stores storage variables as a cell into persistent storage
+() save_storage() impure inline {
+    set_data(
+        begin_cell()
+            .store_uint(storage::is_locked, 1)
+            .store_slice(storage::admin)
+            .store_uint(storage::signer, PUBLIC_KEY_SIZE)
+            .store_ref(storage::jetton_wallet_code)
+            .store_dict(storage::old_queries)
+            .store_dict(storage::queries)
+            .store_uint(storage::last_clean_time, TIMESTAMP_SIZE)
+            .store_uint(storage::timeout, TIMEOUT_SIZE)
+            .end_cell()
+    );
+}

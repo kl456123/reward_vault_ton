@@ -1,32 +1,16 @@
 #include "imports/stdlib.fc";
+#include "imports/params.fc";
 #include "imports/op-codes.fc";
+#include "imports/errors.fc";
+#include "imports/storage.fc";
 #include "imports/utils.fc";
+#include "./admin-calls.fc";
+#include "./get.fc";
 
 ;; storage variables
 
 ;; load_data populates storage variables using stored data
-(slice, int, cell) load_data() impure inline {
-    var ds = get_data().begin_parse();
 
-    var admin = ds~load_msg_addr();
-    var signer = ds~load_uint(256); ;; TODO: to support multiple signers
-    cell jetton_wallet_code = ds~load_ref();
-
-    ds.end_parse();
-
-    return (admin, signer, jetton_wallet_code);
-}
-
-;; save_data stores storage variables as a cell into persistent storage
-() save_data(slice admin, int signer, cell jetton_wallet_code) impure inline {
-    set_data(
-        begin_cell()
-            .store_slice(admin)
-            .store_uint(signer, 256)
-            .store_ref(jetton_wallet_code)
-            .end_cell()
-    );
-}
 
 ;; recv_internal is the main function of the contract and is called when it receives a message from other contracts
 () recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
@@ -40,75 +24,92 @@
         return ();
     }
     slice sender_address = cs~load_msg_addr();
-
     force_chain(sender_address);
 
-
-    var (admin, signer, jetton_wallet_code) = load_data(); ;; here we populate the storage variables
+    load_storage(); ;; here we populate the storage variables
 
     int op = in_msg_body~load_uint(32); ;; by convention, the first 32 bits of incoming message is the op
     int query_id = in_msg_body~load_uint(64); ;; also by convention, the next 64 bits contain the "query id", although this is not always the case
 
-    if (op == op::config_signer()) {
-        ;; check permission
-        throw_unless(800, equal_slices(admin, sender_address));
-        var new_signer_public_key = in_msg_body~load_uint(256);
-        save_data(admin, new_signer_public_key, jetton_wallet_code);
+    if (equal_slices(storage::admin, sender_address)) {
+        handle_admin_messages(op, query_id, in_msg_body);
         return ();
     }
 
-    if (op == op::transfer_ownership()) {
-        ;; check permission
-        throw_unless(800, equal_slices(admin, sender_address));
-        slice new_admin = in_msg_body~load_msg_addr();
-        save_data(new_admin, signer, jetton_wallet_code);
-        return ();
-    }
+    clean_queries_if_possible();
+
     if (op == op::withdraw()) {
-        var signature = in_msg_body~load_bits(512);
-        (int jetton_amount, slice recipient) = (in_msg_body~load_coins(), in_msg_body~load_msg_addr());
-        cell msg_to_sign = begin_cell()
-                .store_coins(jetton_amount)
-                .store_slice(sender_address)
-                .store_slice(in_msg_body)
-                .end_cell();
-        throw_unless(37, check_signature(cell_hash(msg_to_sign), signature, signer));
+        slice signature = in_msg_body~load_bits(512);
+        cell msg_inner = in_msg_body~load_ref();
+        in_msg_body.end_parse();
+        throw_unless(error::invalid_signature, check_signature(msg_inner.cell_hash(), signature, storage::signer));
 
-        slice token_address = in_msg_body~load_msg_addr();
-        var body = create_simple_transfer_body(query_id, 0, jetton_amount, recipient);
-        slice vault_jetton_wallet = calculate_user_jetton_wallet_address(my_address(), token_address, jetton_wallet_code);
+        slice msg_inner_slice = msg_inner.begin_parse();
+        int shift = msg_inner_slice~load_uint(KEY_SIZE);
+        int bit_number = msg_inner_slice~load_uint(BIT_NUMBER_SIZE);
+        msg_inner_slice~skip_bits(PROJECT_ID_SIZE);
+        int created_at = msg_inner_slice~load_uint(TIMESTAMP_SIZE);
+        int jetton_amount = msg_inner_slice~load_coins();
+        slice token_address = msg_inner_slice~load_msg_addr();
+        slice recipient = msg_inner_slice~load_msg_addr();
+        msg_inner_slice.end_parse();
 
-        int valid_until = in_msg_body~load_uint(32);
-        throw_if(39, valid_until <= now());
+        builder body = create_simple_transfer_body(query_id, 0, jetton_amount, recipient);
 
+        check_expiration(created_at);
+
+        ;; prevent from replay attack
+        invalidate_used_query(shift, bit_number);
+
+        ;; send jetton to recipient
+        slice vault_jetton_wallet = calculate_user_jetton_wallet_address(my_address(), token_address, storage::jetton_wallet_code);
         send_simple_message(0, vault_jetton_wallet, body.end_cell(), CARRY_REMAINING_GAS);
+
+        save_storage();
         return ();
     }
 
     if (op == op::claim()) {
+        save_storage();
         return ();
     }
 
     if (op == op::transfer_notification()) {
-        (int jetton_amount, slice from_user) = (in_msg_body~load_coins(), in_msg_body~load_msg_addr());
+        (int jetton_amount, _) = (in_msg_body~load_coins(), in_msg_body~load_msg_addr());
         cell ref_cs = in_msg_body~load_ref();
+
         slice ref_ds = ref_cs.begin_parse();
         int transfered_op = ref_ds~load_uint(32);
+        var signature = ref_ds~load_bits(SIGNATURE_SIZE);
+        cell msg_inner = ref_ds~load_ref();
+        ref_ds.end_parse();
+        slice msg_inner_slice = msg_inner.begin_parse();
 
-        throw_unless(36, transfered_op == op::deposit());
+        throw_unless(error::invalid_op, transfered_op == op::deposit());
 
         ;; verify signature
-        var signature = ref_ds~load_bits(512);
+        throw_unless(error::invalid_signature, check_signature(
+                generate_unsigned_deposit_msg_hash(msg_inner_slice, jetton_amount),
+                signature, storage::signer)
+        );
 
-        cell msg_to_sign = begin_cell().store_coins(jetton_amount).store_slice(from_user).store_slice(ref_ds).end_cell();
-        throw_unless(37, check_signature(cell_hash(msg_to_sign), signature, signer));
-        slice token_address = ref_ds~load_msg_addr();
-        int valid_until = ref_ds~load_uint(32);
-        throw_if(39, valid_until <= now());
+        int shift = msg_inner_slice~load_uint(KEY_SIZE);
+        int bit_number = msg_inner_slice~load_uint(BIT_NUMBER_SIZE);
+        msg_inner_slice~skip_bits(PROJECT_ID_SIZE);
+        int created_at = msg_inner_slice~load_uint(TIMESTAMP_SIZE);
+        slice token_address = msg_inner_slice~load_msg_addr();
+        msg_inner_slice.end_parse();
+
+        ;; check expiration
+        check_expiration(created_at);
+
+        ;; prevent from replay attack
+        invalidate_used_query(shift, bit_number);
 
         ;; check valid sender from jetton wallet
-        ;; TODO(to support multiple versions of jetton wallet code)
-        throw_unless(38, equal_slices(calculate_user_jetton_wallet_address(my_address(), token_address, jetton_wallet_code), sender_address));
+        throw_unless(error::invalid_sender, equal_slices(calculate_user_jetton_wallet_address(my_address(), token_address, storage::jetton_wallet_code), sender_address));
+
+        save_storage();
         return ();
     }
 
@@ -116,6 +117,4 @@
 }
 
 
-(slice, int, cell) get_vault_data() method_id {
-    return load_data();
-}
+

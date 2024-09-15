@@ -5,10 +5,18 @@ export type RewardVaultConfig = {
     admin: Address;
     signer: Buffer;
     jettonCode: Cell;
+    timeout: bigint;
 };
 
 export function rewardVaultConfigToCell(config: RewardVaultConfig): Cell {
-    return beginCell().storeAddress(config.admin).storeBuffer(config.signer).storeRef(config.jettonCode).endCell();
+    return beginCell()
+        .storeUint(0, 1)
+        .storeAddress(config.admin)
+        .storeBuffer(config.signer)
+        .storeRef(config.jettonCode)
+        .storeUint(0, 1 + 1 + 64)
+        .storeUint(config.timeout, 22)
+        .endCell();
 }
 
 export const Opcodes = {
@@ -18,6 +26,16 @@ export const Opcodes = {
 
     config_signer: 0x9c0e0150,
     transfer_ownership: 0xb516d5ff,
+};
+
+export const ExitCodes = {
+    AlreadyExecuted: 36,
+    InvaidSignature: 33,
+    InvalidCreatedAt: 35,
+    InvalidMessageToSend: 37,
+    InvalidOp: 38,
+    InvalidSender: 39,
+    InvalidWC: 40,
 };
 
 export class RewardVault implements Contract {
@@ -79,25 +97,56 @@ export class RewardVault implements Contract {
     async sendWithdraw(
         provider: ContractProvider,
         via: Sender,
-        opts: { value: bigint; admin: Address; queryID?: number },
+        opts: {
+            value: bigint;
+            queryID: number;
+            signature: Buffer;
+            projectId: bigint;
+            createdAt: number;
+            jettonAmount: bigint;
+            recipient: Address;
+            jettonAddress: Address;
+        },
     ) {
         await provider.internal(via, {
             value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell()
                 .storeUint(Opcodes.withdraw, 32)
-                .storeUint(opts.queryID ?? 0, 64)
-                .storeAddress(opts.admin)
+                .storeUint(opts.queryID, 64)
+                .storeBuffer(opts.signature)
+                .storeRef(
+                    beginCell()
+                        .storeUint(opts.queryID, 23)
+                        .storeUint(opts.projectId, 64)
+                        .storeUint(opts.createdAt, 64)
+                        .storeCoins(opts.jettonAmount)
+                        .storeAddress(opts.jettonAddress)
+                        .storeAddress(opts.recipient)
+                        .endCell(),
+                )
                 .endCell(),
         });
     }
 
-    static depositPayload(opts: { signature: Buffer; validUntil: number; jettonAddress: Address }) {
+    static depositPayload(opts: {
+        signature: Buffer;
+        createdAt: number;
+        jettonAddress: Address;
+        queryId: bigint;
+        projectId: bigint;
+    }) {
         return beginCell()
             .storeUint(Opcodes.deposit, 32)
             .storeBuffer(opts.signature)
-            .storeAddress(opts.jettonAddress)
-            .storeUint(opts.validUntil, 32)
+            .storeRef(
+                beginCell()
+                    .storeUint(opts.queryId, 23)
+                    .storeUint(opts.projectId, 64)
+                    .storeUint(opts.createdAt, 64)
+                    .storeAddress(opts.jettonAddress)
+                    .endCell(),
+            )
             .endCell();
     }
 
@@ -127,6 +176,12 @@ export class RewardVault implements Contract {
 
     async getVaultData(provider: ContractProvider) {
         const result = await provider.get('get_vault_data', []);
-        return [result.stack.readAddress(), result.stack.readBigNumber(), result.stack.readCell()];
+        return {
+            isLocked: result.stack.readBoolean(), // is_locked
+            admin: result.stack.readAddress(), // admin
+            signer: result.stack.readBigNumber(), // signer
+            lastCleanTime: result.stack.readBigNumber(), // last_clean_time
+            timeout: result.stack.readBigNumber(), // timeout
+        };
     }
 }

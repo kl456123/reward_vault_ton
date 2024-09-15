@@ -7,10 +7,14 @@ const CARRY_REMAINING_GAS = 64;
 const CARRY_ALL_BALANCE = 128;
 
 int workchain() asm "0 PUSHINT";
+;;; Store binary true b{1} into `builder` [b]
+builder store_true(builder b) asm "STONE";
+;;; Stores [x] binary zeroes into `builder` [b].
+builder store_zeroes(builder b, int x) asm "STZEROES";
 
 () force_chain(slice addr) impure {
-  (int wc, _) = parse_std_addr(addr);
-  throw_unless(333, wc == workchain());
+      (int wc, _) = parse_std_addr(addr);
+    throw_unless(error::invalid_wc, wc == workchain());
 }
 
 (builder) create_simple_transfer_body(int query_id, int fwd_amount, int jetton_amount, slice to) inline {
@@ -29,7 +33,7 @@ int workchain() asm "0 PUSHINT";
 
 
 cell pack_jetton_wallet_data(int balance, slice owner_address, slice jetton_master_address, cell jetton_wallet_code) inline {
-   return  begin_cell()
+    return  begin_cell()
             .store_coins(balance)
             .store_slice(owner_address)
             .store_slice(jetton_master_address)
@@ -38,7 +42,7 @@ cell pack_jetton_wallet_data(int balance, slice owner_address, slice jetton_mast
 }
 
 cell calculate_jetton_wallet_state_init(slice owner_address, slice jetton_master_address, cell jetton_wallet_code) inline {
-  return begin_cell()
+    return begin_cell()
           .store_uint(0, 2)
           .store_dict(jetton_wallet_code)
           .store_dict(pack_jetton_wallet_data(0, owner_address, jetton_master_address, jetton_wallet_code))
@@ -47,7 +51,7 @@ cell calculate_jetton_wallet_state_init(slice owner_address, slice jetton_master
 }
 
 slice calculate_jetton_wallet_address(cell state_init) inline {
-  return begin_cell().store_uint(4, 3)
+    return begin_cell().store_uint(4, 3)
                      .store_int(workchain(), 8)
                      .store_uint(cell_hash(state_init), 256)
                      .end_cell()
@@ -55,7 +59,7 @@ slice calculate_jetton_wallet_address(cell state_init) inline {
 }
 
 slice calculate_user_jetton_wallet_address(slice owner_address, slice jetton_master_address, cell jetton_wallet_code) inline {
-  return calculate_jetton_wallet_address(calculate_jetton_wallet_state_init(owner_address, jetton_master_address, jetton_wallet_code));
+    return calculate_jetton_wallet_address(calculate_jetton_wallet_state_init(owner_address, jetton_master_address, jetton_wallet_code));
 }
 
 
@@ -71,5 +75,61 @@ slice calculate_user_jetton_wallet_address(slice owner_address, slice jetton_mas
     send_raw_message(msg, mode);
 }
 
+;; TODO(reorg msg structure)
+;; shift, bit_number, created_at, project_id, token_address, jetton_amount
+int generate_unsigned_deposit_msg_hash(slice remain_ds, int jetton_amount) inline {
+    cell msg_to_sign = begin_cell()
+            .store_slice(remain_ds)
+            .store_coins(jetton_amount)
+            .end_cell();
+
+    return msg_to_sign.cell_hash();
+}
+
+;; shift, bit_number, created_at, project_id, jetton_amount, token_address, recipient
+int generate_unsigned_withdraw_msg_hash(slice in_msg_body) inline {
+    cell msg_to_sign = begin_cell()
+                .store_slice(in_msg_body)
+                .end_cell();
+
+    return msg_to_sign.cell_hash();
+}
+
+() check_expiration(int created_at) impure inline_ref {
+    throw_unless(error::invalid_created_at, created_at > now() - storage::timeout);
+    throw_unless(error::invalid_created_at, created_at <= now());
+}
 
 
+() clean_queries_if_possible() impure inline_ref {
+    if (storage::last_clean_time < (now() - storage::timeout)) {
+        (storage::old_queries, storage::queries) = (storage::queries, null());
+        if (storage::last_clean_time < (now() - (storage::timeout * 2))) {
+            storage::old_queries = null();
+        }
+        storage::last_clean_time = now();
+    }
+}
+
+() invalidate_used_query(int shift, int bit_number) impure inline_ref {
+    (cell value, int found) = storage::old_queries.udict_get_ref?(KEY_SIZE, shift);
+    if (found) {
+        slice value_slice = value.begin_parse();
+        value_slice~skip_bits(bit_number);
+        throw_if(error::already_executed, value_slice.preload_int(1));
+    }
+
+    (cell value, int found) = storage::queries.udict_get_ref?(KEY_SIZE, shift);
+    builder new_value = null();
+    if (found) {
+        slice value_slice = value.begin_parse();
+        (slice tail, slice head) = value_slice.load_bits(bit_number);
+        throw_if(error::already_executed, tail~load_int(1));
+        new_value = begin_cell().store_slice(head).store_true().store_slice(tail);
+    } else {
+        new_value = begin_cell().store_zeroes(bit_number).store_true().store_zeroes(CELL_BITS_SIZE - bit_number - 1);
+    }
+
+    ;; write back to queries
+    storage::queries~udict_set_ref(KEY_SIZE, shift, new_value.end_cell());
+}

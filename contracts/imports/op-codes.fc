@@ -14,3 +14,7 @@ int op::withdraw() asm "0xB5DE5F9E PUSHINT";
 ;; opcodes for admin
 int op::config_signer() asm "0x9C0E0150 PUSHINT";
 int op::transfer_ownership() asm "0xB516D5FF PUSHINT";
+
+int op::lock() asm "0xB516D5FF PUSHINT";
+int op::unlock() asm "0xB516D5FF PUSHINT";
+int op::upgrade() asm "0xB516D5FF PUSHINT";
