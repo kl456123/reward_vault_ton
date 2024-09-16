@@ -4,6 +4,7 @@ import { RewardVault, JettonMinter, JettonWallet, jettonContentToCell, ExitCodes
 import '@ton/test-utils';
 import { compile } from '@ton/blueprint';
 import { getSecureRandomBytes, KeyPair, keyPairFromSeed, sign } from '@ton/crypto';
+import { generateMockData } from './test_utils';
 
 describe('RewardVault', () => {
     let code: Cell;
@@ -77,16 +78,12 @@ describe('RewardVault', () => {
         });
     });
 
-    it('should deploy', async () => {
+    it('check state of reward vault', async () => {
         const vaultData = await rewardVault.getVaultData();
         expect(vaultData.admin).toEqualAddress(deployer.address);
         expect(vaultData.timeout).toEqual(timeout);
-        // the check is done inside beforeEach
-        // blockchain and rewardVault are ready to use
+        expect(vaultData.signer).toEqual(signerKeyPair.publicKey);
     });
-
-    it('revert when using invalid signature', async () => {});
-    it('revert when using the same queryId again', async () => {});
 
     it('success to deposit jettons to reward vault', async () => {
         const depositAmount = toNano('0.05');
@@ -94,21 +91,13 @@ describe('RewardVault', () => {
         const queryId = 0n;
         const projectId = 0n;
 
-        const toSign = beginCell()
-            .storeUint(queryId, 23)
-            .storeUint(projectId, 64)
-            .storeUint(createdAt, 64)
-            .storeAddress(jettonMinter.address)
-            .storeCoins(depositAmount)
-            .endCell();
-
-        const signature = sign(toSign.hash(), signerKeyPair.secretKey);
         const forwardPayload = RewardVault.depositPayload({
-            signature,
+            signerKeyPair,
             createdAt,
             queryId,
             projectId,
             jettonAddress: jettonMinter.address,
+            depositAmount,
         });
         const tonAmount = toNano('0.1');
         const depositResult = await deployerJettonWallet.sendTransfer(
@@ -132,19 +121,82 @@ describe('RewardVault', () => {
         // check balance
         expect(await vaultJettonWallet.getJettonBalance()).toStrictEqual(initBalance + depositAmount);
         expect(await deployerJettonWallet.getJettonBalance()).toStrictEqual(initBalance - depositAmount);
+    });
 
+    it('revert when using invalid signature', async () => {
+        const mockData = generateMockData();
+        const newSignerKeyPair = keyPairFromSeed(await getSecureRandomBytes(32));
+        const forwardPayload = RewardVault.depositPayload({
+            ...mockData,
+            signerKeyPair: newSignerKeyPair,
+            jettonAddress: jettonMinter.address,
+        });
         // revert when deposit again with the same signature
-        const secondDepositResult = await deployerJettonWallet.sendTransfer(
+        const depositResult = await deployerJettonWallet.sendTransfer(
             deployer.getSender(),
-            tonAmount,
-            depositAmount,
+            mockData.tonAmount,
+            mockData.depositAmount,
             rewardVault.address,
             deployer.address,
             Cell.EMPTY,
-            toNano('0.05'),
+            mockData.forward_ton_amount,
             forwardPayload,
         );
-        expect(secondDepositResult.transactions).toHaveTransaction({
+        expect(depositResult.transactions).toHaveTransaction({
+            from: vaultJettonWallet.address,
+            to: rewardVault.address,
+            success: false,
+            exitCode: ExitCodes.InvaidSignature,
+        });
+    });
+
+    it('revert when tx expiry', async () => {
+        const mockData = generateMockData();
+        const forwardPayload = RewardVault.depositPayload({
+            ...mockData,
+            signerKeyPair,
+            jettonAddress: jettonMinter.address,
+            // overwrite to make it expiry
+            createdAt: Math.floor(Date.now() / 1000) - 60 * 60,
+        });
+        // revert when deposit again with the same signature
+        const depositResult = await deployerJettonWallet.sendTransfer(
+            deployer.getSender(),
+            mockData.tonAmount,
+            mockData.depositAmount,
+            rewardVault.address,
+            deployer.address,
+            Cell.EMPTY,
+            mockData.forward_ton_amount,
+            forwardPayload,
+        );
+        expect(depositResult.transactions).toHaveTransaction({
+            from: vaultJettonWallet.address,
+            to: rewardVault.address,
+            success: false,
+            exitCode: ExitCodes.InvalidCreatedAt,
+        });
+    });
+
+    it('revert when using the same queryId again', async () => {
+        const mockData = generateMockData();
+        const forwardPayload = RewardVault.depositPayload({
+            ...mockData,
+            signerKeyPair,
+            jettonAddress: jettonMinter.address,
+        });
+        // revert when deposit again with the same signature
+        const depositResult = await deployerJettonWallet.sendTransfer(
+            deployer.getSender(),
+            mockData.tonAmount,
+            mockData.depositAmount,
+            rewardVault.address,
+            deployer.address,
+            Cell.EMPTY,
+            mockData.forward_ton_amount,
+            forwardPayload,
+        );
+        expect(depositResult.transactions).toHaveTransaction({
             from: vaultJettonWallet.address,
             to: rewardVault.address,
             success: false,
@@ -197,5 +249,112 @@ describe('RewardVault', () => {
         // check balance
         expect(await vaultJettonWallet.getJettonBalance()).toStrictEqual(vaultBalanceBefore - jettonAmount);
         expect(await recipientJettonWallet.getJettonBalance()).toStrictEqual(recipientBalanceBefore + jettonAmount);
+    });
+
+    describe('administration test', () => {
+        it('success to upgrade reward vault code', async () => {});
+
+        it('success to change admin', async () => {
+            const newAdmin = await blockchain.treasury('newAdmin');
+            const opts = { value: toNano('0.05'), admin: newAdmin.address };
+            const result = await rewardVault.sendTransferOwnership(deployer.getSender(), opts);
+            expect(result.transactions).toHaveTransaction({
+                from: deployer.address,
+                to: rewardVault.address,
+                op: Opcodes.transfer_ownership,
+                success: true,
+            });
+            {
+                const vaultData = await rewardVault.getVaultData();
+                expect(vaultData.admin).toEqualAddress(newAdmin.address);
+            }
+
+            const revertResult = await rewardVault.sendTransferOwnership(deployer.getSender(), opts);
+            expect(revertResult.transactions).toHaveTransaction({
+                from: deployer.address,
+                to: rewardVault.address,
+                op: Opcodes.transfer_ownership,
+                success: false,
+            });
+            // transfer ownership back to deployer
+            const transferBackResult = await rewardVault.sendTransferOwnership(newAdmin.getSender(), {
+                value: toNano('0.05'),
+                admin: deployer.address,
+            });
+            expect(transferBackResult.transactions).toHaveTransaction({
+                from: newAdmin.address,
+                to: rewardVault.address,
+                op: Opcodes.transfer_ownership,
+                success: true,
+            });
+            {
+                const vaultData = await rewardVault.getVaultData();
+                expect(vaultData.admin).toEqualAddress(deployer.address);
+            }
+        });
+
+        it('success to config signer', async () => {
+            const newSignerKeyPair = keyPairFromSeed(await getSecureRandomBytes(32));
+            const result = await rewardVault.sendConfigSigner(deployer.getSender(), {
+                signer: newSignerKeyPair.publicKey,
+                value: toNano('0.05'),
+            });
+            expect(result.transactions).toHaveTransaction({
+                from: deployer.address,
+                to: rewardVault.address,
+                op: Opcodes.config_signer,
+                success: true,
+            });
+            const vaultData = await rewardVault.getVaultData();
+            expect(vaultData.signer).toEqual(newSignerKeyPair.publicKey);
+
+            await rewardVault.sendConfigSigner(deployer.getSender(), {
+                signer: signerKeyPair.publicKey,
+                value: toNano('0.05'),
+            });
+        });
+
+        it('revert when non-admin to config signer', async () => {
+            const newSignerKeyPair = keyPairFromSeed(await getSecureRandomBytes(32));
+            const other = await blockchain.treasury('other');
+            const result = await rewardVault.sendConfigSigner(other.getSender(), {
+                signer: newSignerKeyPair.publicKey,
+                value: toNano('0.05'),
+            });
+            expect(result.transactions).toHaveTransaction({
+                from: other.address,
+                to: rewardVault.address,
+                op: Opcodes.config_signer,
+                success: false,
+            });
+        });
+
+        it('success to lock and unlock', async () => {
+            expect((await rewardVault.getVaultData()).isLocked).toBeFalsy;
+            await rewardVault.sendLock(deployer.getSender(), { value: toNano('0.05'), lock: true });
+            expect((await rewardVault.getVaultData()).isLocked).toBeTruthy;
+            await rewardVault.sendLock(deployer.getSender(), { value: toNano('0.05'), lock: false });
+            expect((await rewardVault.getVaultData()).isLocked).toBeFalsy;
+        });
+
+        it('revert when non-admin to lock/unlock', async () => {
+            const other = await blockchain.treasury('other');
+            const lockRevertResult = await rewardVault.sendLock(other.getSender(), {
+                value: toNano('0.05'),
+                lock: true,
+            });
+            expect(lockRevertResult.transactions).toHaveTransaction({
+                op: Opcodes.lock,
+                success: false,
+            });
+            const unlockRevertResult = await rewardVault.sendLock(other.getSender(), {
+                value: toNano('0.05'),
+                lock: false,
+            });
+            expect(unlockRevertResult.transactions).toHaveTransaction({
+                op: Opcodes.unlock,
+                success: false,
+            });
+        });
     });
 });

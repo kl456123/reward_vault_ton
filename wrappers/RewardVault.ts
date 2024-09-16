@@ -1,4 +1,5 @@
 import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode } from '@ton/core';
+import { getSecureRandomBytes, KeyPair, keyPairFromSeed, sign } from '@ton/crypto';
 import { JettonMinter, JettonWallet } from '../wrappers';
 
 export type RewardVaultConfig = {
@@ -26,6 +27,9 @@ export const Opcodes = {
 
     config_signer: 0x9c0e0150,
     transfer_ownership: 0xb516d5ff,
+    lock: 0x683a7dab,
+    unlock: 0xb516d5ff,
+    upgrade: 0xdbfaf817,
 };
 
 export const ExitCodes = {
@@ -78,6 +82,29 @@ export class RewardVault implements Contract {
         });
     }
 
+    async sendLock(provider: ContractProvider, via: Sender, opts: { value: bigint; lock: boolean; queryID?: number }) {
+        await provider.internal(via, {
+            value: opts.value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell()
+                .storeUint(opts.lock ? Opcodes.lock : Opcodes.unlock, 32)
+                .storeUint(opts.queryID ?? 0, 64)
+                .endCell(),
+        });
+    }
+
+    async sendUpgrade(provider: ContractProvider, via: Sender, opts: { value: bigint; codes: Cell; queryID?: number }) {
+        await provider.internal(via, {
+            value: opts.value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell()
+                .storeUint(Opcodes.upgrade, 32)
+                .storeUint(opts.queryID ?? 0, 64)
+                .storeRef(opts.codes)
+                .endCell(),
+        });
+    }
+
     async sendTransferOwnership(
         provider: ContractProvider,
         via: Sender,
@@ -93,6 +120,21 @@ export class RewardVault implements Contract {
                 .endCell(),
         });
     }
+
+    async sendClaim(
+        provider: ContractProvider,
+        via: Sender,
+        opts: {
+            value: bigint;
+            queryID: number;
+            signature: Buffer;
+            projectId: bigint;
+            createdAt: number;
+            jettonAmount: bigint;
+            recipient: Address;
+            jettonAddress: Address;
+        },
+    ) {}
 
     async sendWithdraw(
         provider: ContractProvider,
@@ -130,15 +172,24 @@ export class RewardVault implements Contract {
     }
 
     static depositPayload(opts: {
-        signature: Buffer;
+        signerKeyPair: KeyPair;
         createdAt: number;
         jettonAddress: Address;
         queryId: bigint;
         projectId: bigint;
+        depositAmount: bigint;
     }) {
+        const toSign = beginCell()
+            .storeUint(opts.queryId, 23)
+            .storeUint(opts.projectId, 64)
+            .storeUint(opts.createdAt, 64)
+            .storeAddress(opts.jettonAddress)
+            .storeCoins(opts.depositAmount)
+            .endCell();
+        const signature = sign(toSign.hash(), opts.signerKeyPair.secretKey);
         return beginCell()
             .storeUint(Opcodes.deposit, 32)
-            .storeBuffer(opts.signature)
+            .storeBuffer(signature)
             .storeRef(
                 beginCell()
                     .storeUint(opts.queryId, 23)
@@ -179,7 +230,13 @@ export class RewardVault implements Contract {
         return {
             isLocked: result.stack.readBoolean(), // is_locked
             admin: result.stack.readAddress(), // admin
-            signer: result.stack.readBigNumber(), // signer
+            signer: Buffer.from(
+                result.stack
+                    .readBigNumber()
+                    .toString(16)
+                    .padStart(32 * 2, '0'),
+                'hex',
+            ), // signer
             lastCleanTime: result.stack.readBigNumber(), // last_clean_time
             timeout: result.stack.readBigNumber(), // timeout
         };

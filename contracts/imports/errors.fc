@@ -1,4 +1,5 @@
 const int error::invalid_signature = 33;
+const int error::locked = 34;
 const int error::invalid_created_at = 35;
 const int error::already_executed = 36;
 const int error::invalid_message_to_send = 37;
