@@ -40,7 +40,7 @@
     check_unlocked();
 
     if ((op == op::withdraw()) | (op == op::claim())) {
-        slice signature = in_msg_body~load_bits(512);
+        slice signature = in_msg_body~load_bits(SIGNATURE_SIZE);
         cell msg_inner = in_msg_body~load_ref();
         in_msg_body.end_parse();
         throw_unless(error::invalid_signature, check_signature(msg_inner.cell_hash(), signature, storage::signer));
@@ -51,7 +51,7 @@
         msg_inner_slice~skip_bits(PROJECT_ID_SIZE);
         int created_at = msg_inner_slice~load_uint(TIMESTAMP_SIZE);
         int jetton_amount = msg_inner_slice~load_coins();
-        slice token_address = msg_inner_slice~load_msg_addr();
+        slice vault_token_wallet = msg_inner_slice~load_msg_addr();
         slice recipient = msg_inner_slice~load_msg_addr();
         msg_inner_slice.end_parse();
 
@@ -63,8 +63,7 @@
         invalidate_used_query(shift, bit_number);
 
         ;; send jetton to recipient
-        slice vault_jetton_wallet = calculate_user_jetton_wallet_address(my_address(), token_address, storage::jetton_wallet_code);
-        send_simple_message(0, vault_jetton_wallet, body.end_cell(), CARRY_REMAINING_GAS);
+        send_simple_message(0, vault_token_wallet, body.end_cell(), CARRY_REMAINING_GAS);
 
         save_storage();
         return ();
@@ -93,7 +92,7 @@
         int bit_number = msg_inner_slice~load_uint(BIT_NUMBER_SIZE);
         msg_inner_slice~skip_bits(PROJECT_ID_SIZE);
         int created_at = msg_inner_slice~load_uint(TIMESTAMP_SIZE);
-        slice token_address = msg_inner_slice~load_msg_addr();
+        slice vault_token_wallet = msg_inner_slice~load_msg_addr();
         msg_inner_slice.end_parse();
 
         ;; check expiration
@@ -103,7 +102,7 @@
         invalidate_used_query(shift, bit_number);
 
         ;; check valid sender from jetton wallet
-        throw_unless(error::invalid_sender, equal_slices(calculate_user_jetton_wallet_address(my_address(), token_address, storage::jetton_wallet_code), sender_address));
+        throw_unless(error::invalid_sender, equal_slices(vault_token_wallet, sender_address));
 
         save_storage();
         return ();

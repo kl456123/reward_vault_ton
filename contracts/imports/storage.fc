@@ -1,7 +1,6 @@
 global int storage::is_locked;
 global slice storage::admin;
 global int storage::signer;
-global cell storage::jetton_wallet_code;
 
 ;; to prevent from replay attack
 global cell storage::queries;
@@ -17,7 +16,6 @@ global int storage::timeout;
     storage::admin = data_slice~load_msg_addr();
     ;; TODO: to support multiple signers
     storage::signer = data_slice~load_uint(PUBLIC_KEY_SIZE);
-    storage::jetton_wallet_code = data_slice~load_ref();
 
     storage::old_queries = data_slice~load_dict();
     storage::queries = data_slice~load_dict();
@@ -36,7 +34,6 @@ global int storage::timeout;
             .store_uint(storage::is_locked, 1)
             .store_slice(storage::admin)
             .store_uint(storage::signer, PUBLIC_KEY_SIZE)
-            .store_ref(storage::jetton_wallet_code)
             .store_dict(storage::old_queries)
             .store_dict(storage::queries)
             .store_uint(storage::last_clean_time, TIMESTAMP_SIZE)

@@ -14,7 +14,6 @@ export function rewardVaultConfigToCell(config: RewardVaultConfig): Cell {
         .storeUint(0, 1)
         .storeAddress(config.admin)
         .storeBuffer(config.signer)
-        .storeRef(config.jettonCode)
         .storeUint(0, 1 + 1 + 64)
         .storeUint(config.timeout, 22)
         .endCell();
@@ -93,14 +92,13 @@ export class RewardVault implements Contract {
         });
     }
 
-    async sendUpgrade(provider: ContractProvider, via: Sender, opts: { value: bigint; codes: Cell; queryID?: number }) {
+    async sendUpgrade(provider: ContractProvider, via: Sender, opts: { value: bigint; queryID?: number }) {
         await provider.internal(via, {
             value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell()
                 .storeUint(Opcodes.upgrade, 32)
                 .storeUint(opts.queryID ?? 0, 64)
-                .storeRef(opts.codes)
                 .endCell(),
         });
     }
@@ -132,7 +130,7 @@ export class RewardVault implements Contract {
             createdAt: number;
             jettonAmount: bigint;
             recipient: Address;
-            jettonAddress: Address;
+            tokenWalletAddress: Address;
         },
     ) {}
 
@@ -142,28 +140,38 @@ export class RewardVault implements Contract {
         opts: {
             value: bigint;
             queryID: number;
-            signature: Buffer;
+            signerKeyPair: KeyPair;
             projectId: bigint;
             createdAt: number;
             jettonAmount: bigint;
             recipient: Address;
-            jettonAddress: Address;
+            tokenWalletAddress: Address;
         },
     ) {
+        const toSign = beginCell()
+            .storeUint(opts.queryID, 23)
+            .storeUint(opts.projectId, 64)
+            .storeUint(opts.createdAt, 64)
+            .storeCoins(opts.jettonAmount)
+            .storeAddress(opts.tokenWalletAddress)
+            .storeAddress(opts.recipient)
+            .endCell();
+
+        const signature = sign(toSign.hash(), opts.signerKeyPair.secretKey);
         await provider.internal(via, {
             value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell()
                 .storeUint(Opcodes.withdraw, 32)
                 .storeUint(opts.queryID, 64)
-                .storeBuffer(opts.signature)
+                .storeBuffer(signature)
                 .storeRef(
                     beginCell()
                         .storeUint(opts.queryID, 23)
                         .storeUint(opts.projectId, 64)
                         .storeUint(opts.createdAt, 64)
                         .storeCoins(opts.jettonAmount)
-                        .storeAddress(opts.jettonAddress)
+                        .storeAddress(opts.tokenWalletAddress)
                         .storeAddress(opts.recipient)
                         .endCell(),
                 )
@@ -174,7 +182,7 @@ export class RewardVault implements Contract {
     static depositPayload(opts: {
         signerKeyPair: KeyPair;
         createdAt: number;
-        jettonAddress: Address;
+        tokenWalletAddress: Address;
         queryId: bigint;
         projectId: bigint;
         depositAmount: bigint;
@@ -183,7 +191,7 @@ export class RewardVault implements Contract {
             .storeUint(opts.queryId, 23)
             .storeUint(opts.projectId, 64)
             .storeUint(opts.createdAt, 64)
-            .storeAddress(opts.jettonAddress)
+            .storeAddress(opts.tokenWalletAddress)
             .storeCoins(opts.depositAmount)
             .endCell();
         const signature = sign(toSign.hash(), opts.signerKeyPair.secretKey);
@@ -195,35 +203,11 @@ export class RewardVault implements Contract {
                     .storeUint(opts.queryId, 23)
                     .storeUint(opts.projectId, 64)
                     .storeUint(opts.createdAt, 64)
-                    .storeAddress(opts.jettonAddress)
+                    .storeAddress(opts.tokenWalletAddress)
                     .endCell(),
             )
             .endCell();
     }
-
-    // async sendDeposit(
-    // provider: ContractProvider,
-    // via: Sender,
-    // opts: {
-    // jettonAmount: number;
-    // to: Address;
-    // value: bigint;
-    // queryID?: number;
-    // }
-    // ) {
-
-    // beginCell().storeUint(Opcodes.jetton_transfer, 32)
-    // JettonWallet.transferMessage(opts.jettonAmount, opts.to);
-    // await provider.internal(via, {
-    // value: opts.value,
-    // sendMode: SendMode.PAY_GAS_SEPARATELY,
-    // body: beginCell()
-    // .storeUint(Opcodes.jetton_transfer, 32)
-    // .storeUint(opts.queryID ?? 0, 64)
-    // .storeUint(opts.increaseBy, 32)
-    // .endCell(),
-    // });
-    // }
 
     async getVaultData(provider: ContractProvider) {
         const result = await provider.get('get_vault_data', []);

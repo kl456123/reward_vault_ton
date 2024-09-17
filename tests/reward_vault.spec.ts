@@ -96,7 +96,7 @@ describe('RewardVault', () => {
             createdAt,
             queryId,
             projectId,
-            jettonAddress: jettonMinter.address,
+            tokenWalletAddress: vaultJettonWallet.address,
             depositAmount,
         });
         const tonAmount = toNano('0.1');
@@ -129,7 +129,7 @@ describe('RewardVault', () => {
         const forwardPayload = RewardVault.depositPayload({
             ...mockData,
             signerKeyPair: newSignerKeyPair,
-            jettonAddress: jettonMinter.address,
+            tokenWalletAddress: vaultJettonWallet.address,
         });
         // revert when deposit again with the same signature
         const depositResult = await deployerJettonWallet.sendTransfer(
@@ -155,7 +155,7 @@ describe('RewardVault', () => {
         const forwardPayload = RewardVault.depositPayload({
             ...mockData,
             signerKeyPair,
-            jettonAddress: jettonMinter.address,
+            tokenWalletAddress: vaultJettonWallet.address,
             // overwrite to make it expiry
             createdAt: Math.floor(Date.now() / 1000) - 60 * 60,
         });
@@ -183,7 +183,7 @@ describe('RewardVault', () => {
         const forwardPayload = RewardVault.depositPayload({
             ...mockData,
             signerKeyPair,
-            jettonAddress: jettonMinter.address,
+            tokenWalletAddress: vaultJettonWallet.address,
         });
         // revert when deposit again with the same signature
         const depositResult = await deployerJettonWallet.sendTransfer(
@@ -211,28 +211,18 @@ describe('RewardVault', () => {
         const queryID = 1;
         const value = toNano('0.05');
         const recipient = await blockchain.treasury('recipient');
-        const toSign = beginCell()
-            .storeUint(queryID, 23)
-            .storeUint(projectId, 64)
-            .storeUint(createdAt, 64)
-            .storeCoins(jettonAmount)
-            .storeAddress(jettonMinter.address)
-            .storeAddress(recipient.address)
-            .endCell();
-
-        const signature = sign(toSign.hash(), signerKeyPair.secretKey);
 
         const vaultBalanceBefore = await vaultJettonWallet.getJettonBalance();
         const recipientBalanceBefore = 0n;
         const withdrawResult = await rewardVault.sendWithdraw(recipient.getSender(), {
             value,
             queryID,
-            signature,
+            signerKeyPair,
             projectId,
             createdAt,
             jettonAmount,
             recipient: recipient.address,
-            jettonAddress: jettonMinter.address,
+            tokenWalletAddress: vaultJettonWallet.address,
         });
 
         expect(withdrawResult.transactions).toHaveTransaction({
