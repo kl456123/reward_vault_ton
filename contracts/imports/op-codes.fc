@@ -4,13 +4,13 @@ int op::transfer_notification() asm "0x7362d09c PUSHINT";
 
 
 ;; opcodes for reward vault
-int op::deposit() asm "0x95DB9D39 PUSHINT";
-int op::claim() asm "0xA769DE27 PUSHINT";
-int op::withdraw() asm "0xB5DE5F9E PUSHINT";
+int op::deposit() asm "0x95DB9D39 PUSHINT"; ;; "deposit"c
+int op::claim() asm "0xA769DE27 PUSHINT";  ;; "claim"c
+int op::withdraw() asm "0xB5DE5F9E PUSHINT"; ;; "withdraw"c
 
 ;; opcodes for admin
 int op::config_signer() asm "0x9C0E0150 PUSHINT";
 int op::transfer_ownership() asm "0xB516D5FF PUSHINT";
-int op::lock() asm "0x683A7DAB PUSHINT";
-int op::unlock() asm "0xB516D5FF PUSHINT";
-int op::upgrade() asm "0xDBFAF817 PUSHINT";
+int op::lock() asm "0x878F9B0E PUSHINT";
+int op::unlock() asm "0x6AE4B0EF PUSHINT";
+int op::upgrade() asm "0xB766741A PUSHINT";

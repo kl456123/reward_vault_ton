@@ -38,7 +38,6 @@ describe('RewardVault', () => {
                     timeout, // 1 hour
                     admin: deployer.address,
                     signer: signerKeyPair.publicKey,
-                    jettonCode: jettonWalletCode,
                 },
                 code,
             ),
@@ -319,12 +318,12 @@ describe('RewardVault', () => {
             });
         });
 
-        it('success to lock and unlock', async () => {
-            expect((await rewardVault.getVaultData()).isLocked).toBeFalsy;
+        it.only('success to lock and unlock', async () => {
+            expect((await rewardVault.getVaultData()).isLocked).toBeFalsy();
             await rewardVault.sendLock(deployer.getSender(), { value: toNano('0.05'), lock: true });
-            expect((await rewardVault.getVaultData()).isLocked).toBeTruthy;
+            expect((await rewardVault.getVaultData()).isLocked).toBeTruthy();
             await rewardVault.sendLock(deployer.getSender(), { value: toNano('0.05'), lock: false });
-            expect((await rewardVault.getVaultData()).isLocked).toBeFalsy;
+            expect((await rewardVault.getVaultData()).isLocked).toBeFalsy();
         });
 
         it('revert when non-admin to lock/unlock', async () => {

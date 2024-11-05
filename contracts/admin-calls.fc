@@ -9,6 +9,8 @@
         storage::is_locked = 0;
     } elseif (op == op::upgrade()) {
         set_code(in_msg_body~load_ref());
+    } else {
+        throw(0xffff); ;; if the message contains an op that is not known to this contract, we throw
     }
     save_storage();
 }

@@ -1,11 +1,9 @@
 import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode } from '@ton/core';
 import { getSecureRandomBytes, KeyPair, keyPairFromSeed, sign } from '@ton/crypto';
-import { JettonMinter, JettonWallet } from '../wrappers';
 
 export type RewardVaultConfig = {
     admin: Address;
     signer: Buffer;
-    jettonCode: Cell;
     timeout: bigint;
 };
 
@@ -26,9 +24,9 @@ export const Opcodes = {
 
     config_signer: 0x9c0e0150,
     transfer_ownership: 0xb516d5ff,
-    lock: 0x683a7dab,
-    unlock: 0xb516d5ff,
-    upgrade: 0xdbfaf817,
+    lock: 0x878f9b0e,
+    unlock: 0x6ae4b0ef,
+    upgrade: 0xb766741a,
 };
 
 export const ExitCodes = {

@@ -24,3 +24,8 @@
 ### Add a new contract
 
 `npx blueprint create ContractName` or `yarn blueprint create ContractName`
+
+
+## Deployment
+
+* RewardVault: EQDNEThZMo4eFuim5GWyoskbatbynx-5ZQMsET7KZsJY44RI
