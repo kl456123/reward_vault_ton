@@ -2,8 +2,11 @@
     "name": "reward_vault_ton",
     "version": "0.0.1",
     "scripts": {
-        "start": "blueprint run",
         "build": "blueprint build --all",
+        "deploy": "blueprint run deploy --mainnet --mnemonic",
+        "deposit": "blueprint run deposit --mainnet --mnemonic",
+        "withdraw": "blueprint run deposit --mainnet --mnemonic",
+        "transfer-ownership": "blueprint run transfer-ownership --mainnet --mnemonic",
         "prettier": "prettier --write scripts/ wrappers/ tests/",
         "test": "jest --verbose"
     },

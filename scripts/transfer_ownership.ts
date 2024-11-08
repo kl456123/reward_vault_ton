@@ -5,8 +5,8 @@ import { RewardVault, JettonMinter, JettonWallet, jettonContentToCell, ExitCodes
 
 export async function run(provider: NetworkProvider, args: string[]) {
     const ui = provider.ui();
-    const newAdmin = Address.parse(args.length > 0 ? args[0] : await ui.input('new admin address'));
-    const rewardVaultAddress = Address.parse('EQDNEThZMo4eFuim5GWyoskbatbynx-5ZQMsET7KZsJY44RI');
+    const rewardVaultAddress = Address.parse(args.length > 0 ? args[0] : await ui.input('reward vault address'));
+    const newAdmin = Address.parse(args.length > 1 ? args[1] : await ui.input('new admin address'));
     const rewardVault = provider.open(RewardVault.createFromAddress(rewardVaultAddress));
 
     const opts = { value: toNano('0.05'), admin: newAdmin };

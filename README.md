@@ -28,4 +28,4 @@
 
 ## Deployment
 
-* RewardVault: EQDNEThZMo4eFuim5GWyoskbatbynx-5ZQMsET7KZsJY44RI
+* RewardVault: ~~EQDNEThZMo4eFuim5GWyoskbatbynx-5ZQMsET7KZsJY44RI~~ EQAp8Ky0paJAAQTpfXefVEiTBGow6gp4EDeBvIVXOEJHtGbC

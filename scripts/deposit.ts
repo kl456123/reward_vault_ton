@@ -4,6 +4,9 @@ import { keyPairFromSecretKey, mnemonicToPrivateKey } from '@ton/crypto';
 import { RewardVault, JettonMinter, JettonWallet, jettonContentToCell, ExitCodes, Opcodes } from '../wrappers';
 
 export async function run(provider: NetworkProvider, args: string[]) {
+    const ui = provider.ui();
+    const rewardVaultAddress = Address.parse(args.length > 0 ? args[0] : await ui.input('reward vault address'));
+
     const depositAmount = toNano('0.001');
     const createdAt = Math.floor(Date.now() / 1000) - 60;
     const queryId = 0n;
@@ -15,8 +18,6 @@ export async function run(provider: NetworkProvider, args: string[]) {
     const jettonMinter = provider.open(
         JettonMinter.createFromAddress(Address.parse('EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs')),
     );
-
-    const rewardVaultAddress = Address.parse('EQDNEThZMo4eFuim5GWyoskbatbynx-5ZQMsET7KZsJY44RI');
 
     const deployerJettonWallet = provider.open(
         JettonWallet.createFromAddress(await jettonMinter.getWalletAddress(deployerAddress)),
@@ -45,4 +46,6 @@ export async function run(provider: NetworkProvider, args: string[]) {
         forwardTonAmount,
         forwardPayload,
     );
+    ui.clearActionPrompt();
+    ui.write('Ownership transfered successfully!');
 }
