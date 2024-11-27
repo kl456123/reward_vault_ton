@@ -27,12 +27,14 @@ export const Opcodes = {
     lock: 0x878f9b0e,
     unlock: 0x6ae4b0ef,
     upgrade: 0xb766741a,
+    transfer_notification: 0x7362d09c,
 };
 
 export const ExitCodes = {
-    AlreadyExecuted: 36,
     InvaidSignature: 33,
+    AlreadyLocked: 34,
     InvalidCreatedAt: 35,
+    AlreadyExecuted: 36,
     InvalidMessageToSend: 37,
     InvalidOp: 38,
     InvalidSender: 39,

@@ -114,6 +114,7 @@ describe('RewardVault', () => {
         expect(depositResult.transactions).toHaveTransaction({
             from: vaultJettonWallet.address,
             to: rewardVault.address,
+            op: Opcodes.transfer_notification,
             success: true,
         });
 
@@ -144,6 +145,7 @@ describe('RewardVault', () => {
         expect(depositResult.transactions).toHaveTransaction({
             from: vaultJettonWallet.address,
             to: rewardVault.address,
+            op: Opcodes.transfer_notification,
             success: false,
             exitCode: ExitCodes.InvaidSignature,
         });
@@ -172,6 +174,7 @@ describe('RewardVault', () => {
         expect(depositResult.transactions).toHaveTransaction({
             from: vaultJettonWallet.address,
             to: rewardVault.address,
+            op: Opcodes.transfer_notification,
             success: false,
             exitCode: ExitCodes.InvalidCreatedAt,
         });
@@ -198,6 +201,7 @@ describe('RewardVault', () => {
         expect(depositResult.transactions).toHaveTransaction({
             from: vaultJettonWallet.address,
             to: rewardVault.address,
+            op: Opcodes.transfer_notification,
             success: false,
             exitCode: ExitCodes.AlreadyExecuted,
         });
@@ -318,10 +322,37 @@ describe('RewardVault', () => {
             });
         });
 
-        it.only('success to lock and unlock', async () => {
+        it('success to lock and unlock', async () => {
             expect((await rewardVault.getVaultData()).isLocked).toBeFalsy();
             await rewardVault.sendLock(deployer.getSender(), { value: toNano('0.05'), lock: true });
             expect((await rewardVault.getVaultData()).isLocked).toBeTruthy();
+            {
+                const depositAmount = toNano('0.05');
+                const forwardPayload = RewardVault.depositPayload({
+                    signerKeyPair,
+                    createdAt: Math.floor(Date.now() / 1000) - 60,
+                    queryId: 2n, // use unused query id
+                    projectId: 0n,
+                    tokenWalletAddress: vaultJettonWallet.address,
+                    depositAmount,
+                });
+                const tonAmount = toNano('0.1');
+                const depositResult = await deployerJettonWallet.sendTransfer(
+                    deployer.getSender(),
+                    tonAmount,
+                    depositAmount,
+                    rewardVault.address,
+                    deployer.address,
+                    Cell.EMPTY,
+                    toNano('0.05'),
+                    forwardPayload,
+                );
+                expect(depositResult.transactions).toHaveTransaction({
+                    op: Opcodes.transfer_notification,
+                    success: false,
+                    exitCode: ExitCodes.AlreadyLocked,
+                });
+            }
             await rewardVault.sendLock(deployer.getSender(), { value: toNano('0.05'), lock: false });
             expect((await rewardVault.getVaultData()).isLocked).toBeFalsy();
         });

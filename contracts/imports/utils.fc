@@ -18,7 +18,7 @@ builder store_zeroes(builder b, int x) asm "STZEROES";
 }
 
 () check_unlocked() impure inline {
-    throw_unless(error::locked, ~ storage::is_locked);
+    throw_if(error::locked, storage::is_locked);
 }
 
 (builder) create_simple_transfer_body(int query_id, int fwd_amount, int jetton_amount, slice to) inline {
